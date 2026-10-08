@@ -77,7 +77,7 @@ galaxies_of_interest = [0, 1, 3, 22, 47]  # or array
 side_on_result = analyser.compute_photometry(
     group_indices=galaxies_of_interest, orientation="side-on", keep_spectra=True
 )
-side_on_spectra = side_on_spectra.columns["spectra"]
+side_on_spectra = side_on_result.columns["spectra"]
 
 # rotate 90 degrees about the x-axis
 from scipy.spatial.transform import Rotation
@@ -86,7 +86,7 @@ rotation_matrix = Rotation.from_rotvec(np.pi / 2 * np.array([1, 0, 0])).as_matri
 rotated_result = analyser.compute_photometry(
     group_indices=[0, 1, 2], orientation=rotation_matrix, keep_spectra=True
 )
-rotated_spectra = rotated_spectra.columns["spectra"]
+rotated_spectra = rotated_result.columns["spectra"]
 ```
 
 :::{note}
