@@ -9,7 +9,10 @@ from .utils import (
     generate_simba_snapshot as generate_simba_snapshot,
     repack_catalogue as repack_catalogue,
 )
-from .cubes.helpers import build_cube
+from .cubes import (
+    make_density_cube,
+    build_cube
+)
 
 __all__ = [
     "OctaviusConfig",
@@ -17,6 +20,7 @@ __all__ = [
     "analyse_snapshot",
     "build_analyser",
     "build_cube",
+    "make_density_cube",
     "load_catalogue",
     "generate_config",
     "generate_test_catalogue",
