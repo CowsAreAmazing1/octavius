@@ -47,7 +47,10 @@ def build_cube(
     snapshot_path: Path | None = None,
 ) -> CubeAnalyser:
     """
-    Constructs a Cube
+    Constructs a CubeAnalyser object, from which one can build datacubes.
+    
+    `get_useful_density_cube_data`
+    `wrangle_density_data`
 
     Parameters
     ----------
@@ -141,6 +144,8 @@ class CubeAnalyser(OctaviusAnalyser):
 
     #     return result
     
+    
+    # TODO: These functions are obviously not very general currently
     def get_useful_density_cube_data(
         self,
         group_indices: list[int] | np.ndarray,
