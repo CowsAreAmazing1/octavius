@@ -9,9 +9,6 @@ from .utils import (
     generate_simba_snapshot as generate_simba_snapshot,
     repack_catalogue as repack_catalogue,
 )
-from .cubes import (
-    make_density_cube,
-)
 
 from .cubes.datacube import (
     build_cube_analyser,
