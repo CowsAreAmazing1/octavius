@@ -4,8 +4,8 @@ from collections import namedtuple
 
 import numpy as np
 
-from ..cubes.datacube import DataCube, Axis
-
+from .datacube import DataCube, Axis
+from .helpers import align_vectors_to_z
 from ..data_management.data_structures import SimulationData
 from ..data_management.conventions import OctaviusConfig
 
@@ -14,9 +14,13 @@ DensityCubeData = namedtuple(
     [
         "pos",
         "mass",
+        "com",
+        "L"
         # "centre",
     ],
 )
+
+
 
 def make_density_cube(
     density_cube_data: DensityCubeData,
@@ -26,12 +30,16 @@ def make_density_cube(
     
     positions = np.asarray(density_cube_data.pos, dtype=np.float64)
     masses = np.asarray(density_cube_data.mass, dtype=np.float64)
-    # centre = np.asarray(density_cube_data.centre, dtype=np.float64)
+    com = np.asarray(density_cube_data.com, dtype=np.float64)
     
     edges = np.linspace(-side_length / 2, side_length / 2, resolution + 1)
     
-    centre = np.mean(positions, axis=0)    
-    rel_positions = positions - centre
+    rel_positions = positions - com
+    
+    # Align the positions to the angular momentum
+    if density_cube_data.L is not None:
+        print("Aligning to angular momentum")
+        rel_positions = align_vectors_to_z(rel_positions, density_cube_data.L)
     
     mass_grid, _ = np.histogramdd(
         rel_positions,

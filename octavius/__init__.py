@@ -11,7 +11,10 @@ from .utils import (
 )
 from .cubes import (
     make_density_cube,
-    build_cube
+)
+
+from .cubes.datacube import (
+    build_cube_analyser,
 )
 
 __all__ = [
@@ -19,7 +22,7 @@ __all__ = [
     "OctaviusConstants",
     "analyse_snapshot",
     "build_analyser",
-    "build_cube",
+    "build_cube_analyser",
     "make_density_cube",
     "load_catalogue",
     "generate_config",

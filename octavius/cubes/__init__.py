@@ -1,5 +1,5 @@
-from .helpers import (
-    build_cube as build_cube,
+from .datacube import (
+    build_cube_analyser as build_cube_analyser,
 )
 
 from .density_cube import (
