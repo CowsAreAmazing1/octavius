@@ -20,7 +20,6 @@ __all__ = [
     "analyse_snapshot",
     "build_analyser",
     "build_cube_analyser",
-    "make_density_cube",
     "load_catalogue",
     "generate_config",
     "generate_test_catalogue",

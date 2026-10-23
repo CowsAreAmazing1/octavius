@@ -2,8 +2,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..utils.loader import OctaviusCatalogue, GroupCollection
-    from ..data_management import SnapshotReader
+    from ..utils.loader import OctaviusCatalogue
     
 # default libraries
 from pathlib import Path
@@ -11,22 +10,12 @@ from dataclasses import dataclass
 
 # other packages
 import numpy as np
-import h5py
-import numba
-from scipy.spatial import KDTree
-from scipy.sparse import csr_array
 
 from ..utils.dynamic_analyser import (
     OctaviusAnalyser,
     _build_particle_stores,
-    _build_group_store,
-    SubsetParticleData,
-    StageResult,    
 )
 from ..data_management import (
-    SimulationData,
-    ParticleStore,
-    GroupStore,
     OctaviusConfig,
     OctaviusConstants,
     build_reader,
@@ -124,9 +113,45 @@ class DataCube:
         # Note: Requires the 'pillow' library installed (pip install pillow)
         writer = animation.PillowWriter(fps=fps)
         ani.save(filepath, writer=writer)
-   
-   
-   
+        
+    def render_vispy(self, colormap: str = "CMRmap"):
+        
+        from vispy import app, scene
+        import matplotlib as mpl
+        from itertools import cycle
+        
+        cmap = mpl.colormaps[colormap]
+
+        norm = mpl.colors.Normalize(vmin=self.data.min(), vmax=self.data.max())
+        vol = cmap(norm(self.data))[..., :3].astype(np.float32)
+        
+        canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
+        canvas.measure_fps()
+
+        view = canvas.central_widget.add_view()
+        volume = scene.visuals.Volume(vol, parent=view.scene, method='mip')
+
+        cam1 = scene.cameras.TurntableCamera(parent=view.scene, fov=60, name='Turntable')
+        cam2 = scene.cameras.ArcballCamera(parent=view.scene, fov=60, name='Arcball')
+        view.camera = cam1
+
+        methods = cycle(['mip', 'attenuated_mip', 'translucent', 'additive',
+                        'average', 'iso'])
+
+        @canvas.events.key_press.connect
+        def on_key_press(event):
+            if event.text == '1':
+                method = next(methods)
+                volume.method = method
+                print("Render method: %s" % method)
+            elif event.text == '2':
+                cam_toggle = {cam1: cam2, cam2: cam1}
+                view.camera = cam_toggle.get(view.camera, cam1)
+                print(view.camera.name + ' camera')
+
+        app.run()
+
+
             
 class CubeAnalyser(OctaviusAnalyser):
     """Start of a class to handle building datacubes"""
@@ -136,6 +161,10 @@ class CubeAnalyser(OctaviusAnalyser):
         self,
         group_indices: list[int] | np.ndarray,
         alignment: str | None = None,
+        ptype: str = "gas",
+        smoothing: str = "auto",
+        neighbours: int = 64,
+        smoothing_length: float | None = None,
     ):
         assert self._reader.simulation_attributes is not None
         
@@ -149,44 +178,61 @@ class CubeAnalyser(OctaviusAnalyser):
         group_data = self._collections[group_type]._data["properties"]
         
         # Centre of the cube
-        mean_com = np.mean(group_data["core/com_pos_baryon"][group_indices], axis=0)
+        centres_of_mass = group_data["core/com_pos_baryon"][group_indices]
+        mean_com = np.mean(centres_of_mass, axis=0)
         
         if alignment is not None:
             if alignment == "angular_momentum":
-                mean_L = np.mean(group_data["core/L_star"][group_indices], axis=0)
-                mean_L /= np.linalg.norm(mean_L)
+                total_L = np.sum(group_data["core/L_baryon"][group_indices], axis=0) # L_star? L_gas?
             else:
                 raise ValueError(f"Unknown alignment option: {alignment}")
         
-        
+        if ptype not in {"gas", "star"}:
+            raise ValueError("ptype must be 'gas' or 'star'.")
+        if smoothing not in {"auto", "provided", "nearest_neighbour", "fixed"}:
+            raise ValueError(
+                "smoothing must be 'auto', 'provided', 'nearest_neighbour', or 'fixed'."
+            )
+        if smoothing == "fixed" and (smoothing_length is None or smoothing_length <= 0):
+            raise ValueError("A positive smoothing_length is required when smoothing='fixed'.")
+        if smoothing == "provided" and ptype == "star":
+            raise ValueError("Star particles do not provide SPH smoothing lengths.")
 
+        use_provided = smoothing == "provided" or (smoothing == "auto" and ptype == "gas")
         gal_reqs = {
-            'star': ['mass', 'pos'],
-            'gas':  ['mass', 'pos'] # 'smoothing_length'
+            ptype: ["mass", "pos"] + (["smoothing_length"] if use_provided else [])
         }
         gal_data = self._extract_groups(group_type=group_type, group_indices=group_indices, ptype_columns=gal_reqs)
 
         particles = _build_particle_stores(subset_data=gal_data, internals=self._internals)
-        galaxies = _build_group_store(group_type="galaxies", group_indices=group_indices, subset_data=gal_data, internals=self._internals)
+        particle_data = particles[ptype]
+        positions = particle_data["pos"]
+        if use_provided:
+            particle_smoothing = particle_data["smoothing_length"]
+        elif smoothing == "fixed":
+            particle_smoothing = np.full(len(positions), smoothing_length, dtype=np.float64)
+        else:
+            from ..cubes.density_cube import DensityCubeData
+            particle_smoothing = DensityCubeData.estimate_nearest_neighbour_smoothing_lengths(
+                positions - mean_com,
+                neighbours=neighbours,
+            )
 
-        # sim_data = SimulationData(
-        #     simulation=self._reader.simulation_attributes,
-        #     constants=self._constants,
-        #     particles=particles,
-        #     groups=groups,
-        # )
-        
-        stars = particles["star"]
-        
         from ..cubes.density_cube import DensityCubeData
-        
         return DensityCubeData(
-            pos=stars["pos"],
-            mass=stars["mass"],
+            pos=positions,
+            mass=particle_data["mass"],
+            smoothing_length=particle_smoothing,
             com=mean_com,
-            L=mean_L if alignment == "angular_momentum" else None,
-            # centre=simulation_data.groups["galaxies"]["core/com_pos_baryon"]
+            angular_momentum=total_L if alignment == "angular_momentum" else None,
+            config=self._config,
         )
+        
+    def get_num_particles(self, ptype: str, group_index: int):
+        assert self._catalogue.galaxies is not None, "Catalogue is not set."
+        return len(self._catalogue.galaxies.get_particle_indices(ptype, group_index))
+
+
 
 
 def build_cube_analyser(
