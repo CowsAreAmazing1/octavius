@@ -7,6 +7,8 @@ if TYPE_CHECKING:
 # default libraries
 from pathlib import Path
 from dataclasses import dataclass
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 # other packages
 import numpy as np
@@ -25,6 +27,17 @@ from ..data_management.pipeline_management import load_internals, Internals, Pip
 from ..log import get_logger, configure_logger
 
 INTERNALS_FILEPATH = Path(__file__).parent.parent / "internals.yaml"
+
+
+from matplotlib import colors
+# from https://github.com/brkent/datacube-display
+CDICT_BKCMAP={
+    'red'  :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0),  (1., 1., 1.)),
+    'green':  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0),  (1., 1., 1.)),
+    'blue' :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0),  (1., 1., 1.))
+}
+BKCMAP = colors.LinearSegmentedColormap('bkcmap', CDICT_BKCMAP, 1024) # type: ignore
+
 
 
 @dataclass
@@ -72,26 +85,15 @@ class DataCube:
             print("Aborting animation save.")
             return
         
-        import matplotlib.pyplot as plt
-        import matplotlib.animation as animation
-        from matplotlib import colors, cm
-        
-        # from https://github.com/brkent/datacube-display
-        cdict_bkcmap={
-            'red'  :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0),  (1., 1., 1.)),
-            'green':  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0),  (1., 1., 1.)),
-            'blue' :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0),  (1., 1., 1.))
-        }
 
-        bkcmap = colors.LinearSegmentedColormap('bkcmap', cdict_bkcmap, 1024) # type: ignore
 
         m, M = self.data.min(), self.data.max()
         
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
         
-        im1 = ax1.imshow(self.data[0, :, :], cmap=bkcmap, vmin=m, vmax=M)
-        im2 = ax2.imshow(self.data[:, 0, :], cmap=bkcmap, vmin=m, vmax=M)
-        im3 = ax3.imshow(self.data[:, :, 0], cmap=bkcmap, vmin=m, vmax=M)
+        im1 = ax1.imshow(self.data[0, :, :], cmap=BKCMAP, vmin=m, vmax=M)
+        im2 = ax2.imshow(self.data[:, 0, :], cmap=BKCMAP, vmin=m, vmax=M)
+        im3 = ax3.imshow(self.data[:, :, 0], cmap=BKCMAP, vmin=m, vmax=M)
         ax1.set_title("Slice: x = {self.axes[0].coordinates[0]:.2f} {self.axes[0].unit}")
         
         # fig.colorbar(im1, ax=ax1)
@@ -114,16 +116,54 @@ class DataCube:
         writer = animation.PillowWriter(fps=fps)
         ani.save(filepath, writer=writer)
         
-    def render_vispy(self, colormap: str = "CMRmap"):
+    def render_vispy(
+        self,
+        colormap: str | None = None,
+        norm: str = "linear",
+        vmin: float | None = None,
+        vmax: float | None = None,
+    ):
         
         from vispy import app, scene
         import matplotlib as mpl
         from itertools import cycle
         
-        cmap = mpl.colormaps[colormap]
+        if colormap is None:
+            cmap = BKCMAP
+        else:
+            cmap = mpl.colormaps[colormap]
 
-        norm = mpl.colors.Normalize(vmin=self.data.min(), vmax=self.data.max())
-        vol = cmap(norm(self.data))[..., :3].astype(np.float32)
+        if norm not in {"linear", "log"}:
+            raise ValueError("norm must be either 'linear' or 'log'.")
+
+        data = np.asarray(self.data, dtype=np.float64)
+        # if not np.all(np.isfinite(data)):
+        #     raise ValueError("Data must contain only finite values for rendering.")
+
+        data_min = data.min() if vmin is None else vmin
+        data_max = data.max() if vmax is None else vmax
+        if data_min >= data_max:
+            raise ValueError("vmin must be smaller than vmax.")
+
+        if norm == "log":
+            positive_data = data[data > 0] # LogNorm complains if vmin <= 0, so set the colour floor to the smallest data value > 0
+            if positive_data.size == 0:
+                raise ValueError("Logarithmic normalization requires at least one positive value.")
+            log_vmin = positive_data.min() if vmin is None else vmin
+            if log_vmin <= 0:
+                raise ValueError("vmin must be positive for logarithmic normalization.")
+            if vmax is None:
+                data_max = positive_data.max()
+            if data_max <= log_vmin:
+                raise ValueError("vmax must be greater than vmin for logarithmic normalization.")
+            data_for_norm = np.maximum(data, log_vmin)
+            normalization = mpl.colors.LogNorm(vmin=log_vmin, vmax=data_max)
+        else:
+            normalization = mpl.colors.Normalize(vmin=data_min, vmax=data_max)
+            data_for_norm = data
+
+        normalized_data = normalization(data_for_norm.reshape(-1)).reshape(data.shape)
+        vol = cmap(normalized_data)[..., :3].astype(np.float32)
         
         canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
         canvas.measure_fps()
@@ -159,6 +199,7 @@ class CubeAnalyser(OctaviusAnalyser):
     # TODO: These functions are obviously not very general currently
     def get_useful_density_cube_data(
         self,
+        group_type: str,
         group_indices: list[int] | np.ndarray,
         alignment: str | None = None,
         ptype: str = "gas",
@@ -170,7 +211,6 @@ class CubeAnalyser(OctaviusAnalyser):
         
         group_indices = np.sort(np.asarray(group_indices, dtype=np.int64))
         
-        group_type = "galaxies"
         if group_type not in self._collections:
             raise KeyError(f"'{group_type}' is not present in the catalogue.")
         
