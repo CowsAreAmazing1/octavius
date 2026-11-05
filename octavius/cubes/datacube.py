@@ -7,8 +7,6 @@ if TYPE_CHECKING:
 # default libraries
 from pathlib import Path
 from dataclasses import dataclass
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 # other packages
 import numpy as np
@@ -28,15 +26,17 @@ from ..log import get_logger, configure_logger
 
 INTERNALS_FILEPATH = Path(__file__).parent.parent / "internals.yaml"
 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from matplotlib import colors
 # from https://github.com/brkent/datacube-display
 CDICT_BKCMAP={
-    'red'  :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0),  (1., 1., 1.)),
-    'green':  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0),  (1., 1., 1.)),
-    'blue' :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0),  (1., 1., 1.))
+    'red'  :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0), (1., 1., 1.)),
+    'green':  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0), (1., 1., 1.)),
+    'blue' :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0), (1., 1., 1.))
 }
-BKCMAP = colors.LinearSegmentedColormap('bkcmap', CDICT_BKCMAP, 1024) # type: ignore
+BKCMAP = colors.LinearSegmentedColormap('bkcmap', CDICT_BKCMAP, 1024)
 
 
 
@@ -125,6 +125,7 @@ class DataCube:
         
         # Imports for vispy rendering. TODO: Figure out how to make these optional / only included in dependencies of the user wants to use datacubes / this specific renderer
         from vispy import app, scene
+        from vispy.color import Colormap
         from vispy.scene.visuals import Volume
         import matplotlib as mpl
         from itertools import cycle
@@ -133,7 +134,6 @@ class DataCube:
             cmap = BKCMAP
         else:
             cmap = mpl.colormaps[colormap]
-
 
         data = np.asarray(self.data, dtype=np.float64)
 
@@ -155,35 +155,60 @@ class DataCube:
             data_max = positive_data.max()
         if data_max <= log_vmin:
             raise ValueError("vmax must be greater than vmin for logarithmic normalization.")
-        data_for_log_norm = np.maximum(data, log_vmin)
-        log_normalization = mpl.colors.LogNorm(vmin=log_vmin, vmax=data_max)
+        
+        log_vmin = data_max * 1e-3 # This is magic; Find a good way to set this. Was imagining a slider but idealy that'd come as part of a whole GUI
+        
+        # ColorBarWidget requires a VisPy Colormap. Sampling the Matplotlib
+        # colormap preserves the same colors used for the volume textures.
+        
+        # Sample a VisPy colormap from the existing MPL colormap, to fit type requirements of the ColorBarWidget 
+        vispy_cmap = Colormap(cmap(np.linspace(0.0, 1.0, 1024)))
 
         data_for_lin_norm = data
         lin_normalization = mpl.colors.Normalize(vmin=data_min, vmax=data_max)
         
-        normalized_log_data = log_normalization(data_for_log_norm.reshape(-1)).reshape(data.shape)
-        normalized_lin_data = lin_normalization(data_for_lin_norm.reshape(-1)).reshape(data.shape)
-
-        log_vol = cmap(normalized_log_data)[..., :3].astype(np.float32)
-        lin_vol = cmap(normalized_lin_data)[..., :3].astype(np.float32)
+        data_for_log_norm = np.maximum(data, log_vmin)
+        log_normalization = mpl.colors.LogNorm(vmin=log_vmin, vmax=data_max)
         
+        normalized_lin_data = lin_normalization(data_for_lin_norm.reshape(-1)).reshape(data.shape)
+        normalized_log_data = log_normalization(data_for_log_norm.reshape(-1)).reshape(data.shape)
+        
+        lin_vol = np.asarray(normalized_lin_data, dtype=np.float32)
+        log_vol = np.asarray(normalized_log_data, dtype=np.float32)
     
         # Create a VisPy scene and add the volume visuals    
         canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
         canvas.measure_fps()
 
         view = canvas.central_widget.add_view()
-        linear_volume = Volume(lin_vol, parent=view.scene, method='mip')
-        log_volume = Volume(log_vol, parent=view.scene, method='mip')
+        lin_volume = Volume(
+            lin_vol,
+            parent=view.scene,
+            method='mip',
+            cmap=vispy_cmap,
+            clim=(0.0, 1.0),
+        )
+        log_volume = Volume(
+            log_vol,
+            parent=view.scene,
+            method='mip',
+            cmap=vispy_cmap,
+            clim=(0.0, 1.0),
+        )
         log_volume.visible = False
-        logarithmic = False
+        normalization = 'linear'
 
         cam1 = scene.cameras.TurntableCamera(parent=view.scene, fov=60, name='Turntable')
         cam2 = scene.cameras.ArcballCamera(parent=view.scene, fov=60, name='Arcball')
         view.camera = cam1
 
-        methods = cycle(['mip', 'attenuated_mip', 'translucent', 'additive',
-                        'average', 'iso'])
+        methods = cycle(['mip', 'attenuated_mip', 'translucent', 'additive', 'average', 'iso'])
+        cameras = cycle([cam1, cam2])
+        
+        grid = canvas.central_widget.add_grid()
+        cbar = scene.ColorBarWidget(cmap=vispy_cmap, orientation='right', clim=(data_min, data_max))
+        grid.add_widget(cbar)
+        cbar.visible = False        
 
         canvas_events = getattr(canvas, 'events')
 
@@ -191,19 +216,20 @@ class DataCube:
         def on_key_press(event):
             if event.text == '1':
                 method = next(methods)
-                linear_volume.method = method
+                lin_volume.method = method
                 log_volume.method = method
                 print("Render method: %s" % method)
             elif event.text == '2':
-                cam_toggle = {cam1: cam2, cam2: cam1}
-                view.camera = cam_toggle.get(view.camera, cam1)
+                view.camera = next(cameras)
                 print(view.camera.name + ' camera')
             elif event.text == '3':
-                nonlocal logarithmic
-                logarithmic = not logarithmic
-                linear_volume.visible = not logarithmic
-                log_volume.visible = logarithmic
-                print("Logarithmic normalization" if logarithmic else "Linear normalization")
+                nonlocal normalization
+                normalization = {'linear': 'logarithmic', 'logarithmic': 'linear'}[normalization]
+                lin_volume.visible = normalization == 'linear'
+                log_volume.visible = normalization == 'logarithmic'
+                print(f"{normalization.capitalize()} normalization")
+            elif event.text == '4':
+                cbar.visible = not cbar.visible
 
         app.run()
 
