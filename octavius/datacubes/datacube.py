@@ -1,5 +1,8 @@
+"""
+Functions for generic completed datacubes. Currently handles visualisation.
+"""
 
-from typing import TYPE_CHECKING
+# nothing specifically needed for type checking (yet)
 
 # default libraries
 from pathlib import Path
@@ -8,13 +11,19 @@ from dataclasses import dataclass
 # other packages
 import numpy as np
 
+# datacube packages (NOTE: does doing this here make them required by default?)
+from vispy import app, scene
+from vispy.color import Colormap
+from vispy.scene.visuals import Volume, XYZAxis
+from itertools import cycle
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from ..log import get_logger, configure_logger
 
 INTERNALS_FILEPATH = Path(__file__).parent.parent / "internals.yaml"
-
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 from matplotlib import colors
 # from https://github.com/brkent/datacube-display
@@ -109,13 +118,7 @@ class DataCube:
         vmin: float | None = None,
         vmax: float | None = None,
     ):
-        
-        # Imports for vispy rendering. TODO: Figure out how to make these optional / only included in dependencies of the user wants to use datacubes / this specific renderer
-        from vispy import app, scene
-        from vispy.color import Colormap
-        from vispy.scene.visuals import Volume, XYZAxis
-        import matplotlib as mpl
-        from itertools import cycle
+        # TODO: This needs a docstring
         
         if colormap is None:
             cmap = BKCMAP

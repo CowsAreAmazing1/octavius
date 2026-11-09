@@ -43,6 +43,10 @@ classifiers = [
 photometry = [
     "fsps>=0.5.0",
 ]
+datacubes = [
+    "matplotlib>=3.11.2",
+    "vispy",
+]
 test = [
     "pytest>=8.0", 
     "pytest-cov>=5.0",

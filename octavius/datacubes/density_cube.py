@@ -1,17 +1,22 @@
-"""testing a specific type of cube"""
+"""
+Functions for generating and manipulating 3D spatial density datacubes.
 
+Deals with 3D grid sampling and other data handling.
+"""
+
+# default packages
 from dataclasses import dataclass, field
 
-
+# other packages
 import numpy as np
 from numba import njit
 from scipy.spatial import KDTree
 
+# internal imports
 from .datacube import Axis, DataCube
 from .helpers import align_vectors_to_z
 from ..data_management.conventions import OctaviusConfig
 from ..photometry.photometry_helpers import KERNEL_INT_MAP, _cubic_kernel, _quintic_kernel
-
 
 @njit(cache=True)
 def _deposit_property_by_density(

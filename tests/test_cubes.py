@@ -1,4 +1,4 @@
-from octavius.cubes.helpers import align_vectors_to_z
+from octavius.datacubes.helpers import align_vectors_to_z
 
 import numpy as np
 

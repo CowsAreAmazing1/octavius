@@ -1,25 +1,29 @@
+"""
+Internal functions for building datacubes, using existing methods from the `OctaviusAnalyser` class.
+Handles access to all data avaliable in the catalogue, snapshot and config.
+"""
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..utils.loader import OctaviusCatalogue
+    from ..data_management import OctaviusConfig
 
-import numpy as np
+# default packages
 from pathlib import Path
+
+# other packages
+import numpy as np
 from h5py._hl.group import Group
 from h5py._hl.dataset import Dataset
 
-from h5py._hl.group import Group
-
-from .datacube import DataCube, Axis
+# internal imports
 from .density_cube import DensityCubeData
-
 from ..utils.dynamic_analyser import (
     OctaviusAnalyser,
     _build_particle_stores,
 )
 from ..data_management import (
-    OctaviusConfig,
     OctaviusConstants,
     build_reader,
 )
@@ -193,14 +197,19 @@ class CubeAnalyser(OctaviusAnalyser):
         
         # Data access for the galaxies/haloes
         group_data = self._collections[group_type]._data["properties"]
+        assert isinstance(group_data, Group)
         
         # Centre of the cube, found my taking the mean of the centres of mass of each galaxy/halo in the group
-        centres_of_mass = group_data["core/com_pos_baryon"][group_indices]
-        mean_com = np.mean(centres_of_mass, axis=0)
+        coms_dataset = group_data["core/com_pos_baryon"]
+        assert isinstance(coms_dataset, Dataset)
+        coms = coms_dataset[group_indices]
+        mean_com = np.mean(coms_dataset, axis=0)
         
         if alignment is not None:
             if alignment == "angular_momentum":
-                total_L = np.sum(group_data["core/L_baryon"][group_indices], axis=0) # L_star? L_gas?
+                dataset = group_data["core/L_baryon"]
+                assert isinstance(dataset, Dataset)
+                total_L = np.sum(dataset[group_indices][:], axis=0) # L_star? L_gas?
             else:
                 raise ValueError(f"Unknown alignment option: {alignment}")
         
@@ -229,7 +238,6 @@ class CubeAnalyser(OctaviusAnalyser):
         elif smoothing == "fixed":
             particle_smoothing = np.full(len(positions), smoothing_length, dtype=np.float64)
         else:
-            from ..cubes.density_cube import DensityCubeData
             particle_smoothing = DensityCubeData.estimate_nearest_neighbour_smoothing_lengths(
                 positions - mean_com,
                 neighbours=neighbours,
