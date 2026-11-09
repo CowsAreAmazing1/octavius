@@ -14,9 +14,10 @@ from ..photometry.photometry_helpers import KERNEL_INT_MAP, _cubic_kernel, _quin
 
 
 @njit(cache=True)
-def _deposit_density(
+def _deposit_property_by_density(
     positions: np.ndarray,
     masses: np.ndarray,
+    property: np.ndarray,
     smoothing_lengths: np.ndarray,
     lower_bounds: np.ndarray,
     widths: np.ndarray,
@@ -52,7 +53,7 @@ def _deposit_density(
                     density_grid[ix, iy, iz] += (
                         masses[particle_index] * weight / smoothing_length**3
                     )
-
+                    
     return density_grid
 
 
@@ -62,6 +63,7 @@ class DensityCubeData:
     
     pos: np.ndarray # positions of the particles
     mass: np.ndarray # masses of the particles
+    property: np.ndarray # desired property of the particles, 
     smoothing_length: np.ndarray | None
     com: np.ndarray # center of mass of the particles
     config: OctaviusConfig
@@ -211,9 +213,10 @@ class DensityCubeData:
         
         kernel_type = KERNEL_INT_MAP[self.config.kernel_type]
         
-        density_grid = _deposit_density(
+        density_grid = _deposit_property_by_density(
             positions=positions,
             masses=masses,
+            property=self.property,
             smoothing_lengths=smoothing_lengths,
             lower_bounds=lower_bounds,
             widths=widths,

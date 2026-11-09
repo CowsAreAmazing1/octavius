@@ -1,9 +1,6 @@
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ..utils.loader import OctaviusCatalogue
-    
 # default libraries
 from pathlib import Path
 from dataclasses import dataclass
@@ -11,16 +8,6 @@ from dataclasses import dataclass
 # other packages
 import numpy as np
 
-from ..utils.dynamic_analyser import (
-    OctaviusAnalyser,
-    _build_particle_stores,
-)
-from ..data_management import (
-    OctaviusConfig,
-    OctaviusConstants,
-    build_reader,
-)
-from ..data_management.pipeline_management import load_internals, Internals, PipelineStage
 
 from ..log import get_logger, configure_logger
 
@@ -47,8 +34,8 @@ class Axis:
     name: str
     unit: str
     coordinates: np.ndarray
-    
-    
+
+
 @dataclass
 class DataCube:
     """A generic datacube with 3 axes"""
@@ -126,7 +113,7 @@ class DataCube:
         # Imports for vispy rendering. TODO: Figure out how to make these optional / only included in dependencies of the user wants to use datacubes / this specific renderer
         from vispy import app, scene
         from vispy.color import Colormap
-        from vispy.scene.visuals import Volume
+        from vispy.scene.visuals import Volume, XYZAxis
         import matplotlib as mpl
         from itertools import cycle
         
@@ -179,8 +166,8 @@ class DataCube:
         # Create a VisPy scene and add the volume visuals    
         canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
         canvas.measure_fps()
-
         view = canvas.central_widget.add_view()
+
         lin_volume = Volume(
             lin_vol,
             parent=view.scene,
@@ -197,6 +184,11 @@ class DataCube:
         )
         log_volume.visible = False
         normalization = 'linear'
+        
+        volume_center = (np.array(vol_data.shape) / 2.0)[::-1]
+        lin_volume.transform = 
+        
+        XYZAxis(pos=self., parent=view.scene, width=10)
 
         cam1 = scene.cameras.TurntableCamera(parent=view.scene, fov=60, name='Turntable')
         cam2 = scene.cameras.ArcballCamera(parent=view.scene, fov=60, name='Arcball')
@@ -232,130 +224,3 @@ class DataCube:
                 cbar.visible = not cbar.visible
 
         app.run()
-
-
-            
-class CubeAnalyser(OctaviusAnalyser):
-    """Start of a class to handle building datacubes"""
-    
-    # TODO: These functions are obviously not very general currently
-    def get_useful_density_cube_data(
-        self,
-        group_type: str,
-        group_indices: list[int] | np.ndarray,
-        alignment: str | None = None,
-        ptype: str = "gas",
-        smoothing: str = "auto",
-        neighbours: int = 64,
-        smoothing_length: float | None = None,
-    ) -> DensityCubeData:
-        assert self._reader.simulation_attributes is not None
-        
-        group_indices = np.sort(np.asarray(group_indices, dtype=np.int64))
-        
-        if group_type not in self._collections:
-            raise KeyError(f"'{group_type}' is not present in the catalogue.")
-        
-        # Data access for the galaxies/haloes
-        group_data = self._collections[group_type]._data["properties"]
-        
-        # Centre of the cube
-        centres_of_mass = group_data["core/com_pos_baryon"][group_indices]
-        mean_com = np.mean(centres_of_mass, axis=0)
-        
-        if alignment is not None:
-            if alignment == "angular_momentum":
-                total_L = np.sum(group_data["core/L_baryon"][group_indices], axis=0) # L_star? L_gas?
-            else:
-                raise ValueError(f"Unknown alignment option: {alignment}")
-        
-        if ptype not in {"gas", "star"}:
-            raise ValueError("ptype must be 'gas' or 'star'.")
-        if smoothing not in {"auto", "provided", "nearest_neighbour", "fixed"}:
-            raise ValueError(
-                "smoothing must be 'auto', 'provided', 'nearest_neighbour', or 'fixed'."
-            )
-        if smoothing == "fixed" and (smoothing_length is None or smoothing_length <= 0):
-            raise ValueError("A positive smoothing_length is required when smoothing='fixed'.")
-        if smoothing == "provided" and ptype == "star":
-            raise ValueError("Star particles do not provide SPH smoothing lengths.")
-
-        use_provided = smoothing == "provided" or (smoothing == "auto" and ptype == "gas")
-        gal_reqs = {
-            ptype: ["mass", "pos"] + (["smoothing_length"] if use_provided else [])
-        }
-        gal_data = self._extract_groups(group_type=group_type, group_indices=group_indices, ptype_columns=gal_reqs)
-
-        particles = _build_particle_stores(subset_data=gal_data, internals=self._internals)
-        particle_data = particles[ptype]
-        positions = particle_data["pos"]
-        if use_provided:
-            particle_smoothing = particle_data["smoothing_length"]
-        elif smoothing == "fixed":
-            particle_smoothing = np.full(len(positions), smoothing_length, dtype=np.float64)
-        else:
-            from ..cubes.density_cube import DensityCubeData
-            particle_smoothing = DensityCubeData.estimate_nearest_neighbour_smoothing_lengths(
-                positions - mean_com,
-                neighbours=neighbours,
-            )
-
-        from ..cubes.density_cube import DensityCubeData
-        return DensityCubeData(
-            pos=positions,
-            mass=particle_data["mass"],
-            smoothing_length=particle_smoothing,
-            com=mean_com,
-            angular_momentum=total_L if alignment == "angular_momentum" else None,
-            config=self._config,
-        )
-        
-    def get_num_particles(self, ptype: str, group_index: int):
-        assert self._catalogue.galaxies is not None, "Catalogue is not set."
-        return len(self._catalogue.galaxies.get_particle_indices(ptype, group_index))
-
-
-
-
-def build_cube_analyser(
-    catalogue: OctaviusCatalogue,
-    config: OctaviusConfig,
-    snapshot_path: Path | None = None,
-) -> CubeAnalyser:
-    """
-    Constructs a CubeAnalyser object, from which one can build datacubes.
-    
-    `get_useful_density_cube_data`
-    `wrangle_density_data`
-
-    Parameters
-    ----------
-    catalogue: OctaviusCatalogue
-        OctaviusCatalogue object corresponding to the snapshot.
-    config: OctaviusConfig
-        OctaviusConfig object.
-    snapshot_path: pathlib.Path or None
-        Path object pointing to the original, raw snapshot (overrides config field).
-
-    Returns
-    -------
-    analyser: OctaviusAnalyser
-        An OctaviusAnalyser object.
-
-    Notes
-    -----
-    The config can be modified from the one used to create the snapshot. Pipeline-specific parameters will be disregarded.
-    """
-    # initialise data structures
-    constants = OctaviusConstants(mu=config.MU, frad=config.FRAD)
-    snapshot_path = snapshot_path or config.snapshot_path
-    reader = build_reader(snapshot_path=snapshot_path, constants=constants, config=config)
-    internals = load_internals(internals_filepath=INTERNALS_FILEPATH, config=config)
-
-    return CubeAnalyser(
-        reader=reader,
-        catalogue=catalogue,
-        config=config,
-        constants=constants,
-        internals=internals,
-    )

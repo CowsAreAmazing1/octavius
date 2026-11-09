@@ -10,7 +10,7 @@ from .utils import (
     repack_catalogue as repack_catalogue,
 )
 
-from .cubes.datacube import (
+from .cubes.datacube_analyser import (
     build_cube_analyser,
 )
 
