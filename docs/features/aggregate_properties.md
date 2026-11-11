@@ -157,7 +157,7 @@ Aperture masses are slightly less accurate for galaxies at the edge of haloes, a
 
 ### Galaxy Outputs
 
-- `mass_{ptype}_{aperture}kpc`: the mass contained within the specified {aperture} in $\mathrm{kpc}$, where the aperture sizes are defined in the configuration file. Do note the the `dm` mass in the aperture is also provided.
+- `mass_{ptype}_{aperture}kpc`: the mass contained within the specified {aperture} in $\mathrm{kpc}$, where the aperture sizes are defined in the configuration file. Do note the `dm` mass in the aperture is also provided.
 
 - `mass_HI_{aperture}kpc`: the neutral hydrogen mass contained within the specified $\mathrm{kpc}$ aperture.
 
