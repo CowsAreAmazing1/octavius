@@ -6,28 +6,28 @@ Handles access to all data avaliable in the catalogue, snapshot and config.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..utils.loader import OctaviusCatalogue
     from ..data_management import OctaviusConfig
+    from ..utils.loader import OctaviusCatalogue
 
 # default packages
 from pathlib import Path
 
 # other packages
 import numpy as np
-from h5py._hl.group import Group
 from h5py._hl.dataset import Dataset
+from h5py._hl.group import Group
 
 # internal imports
-from .density_cube import DensityCubeData
-from ..utils.dynamic_analyser import (
-    OctaviusAnalyser,
-    _build_particle_stores,
-)
 from ..data_management import (
     OctaviusConstants,
     build_reader,
 )
-from ..data_management.pipeline_management import load_internals, Internals, PipelineStage
+from ..data_management.pipeline_management import load_internals
+from ..utils.dynamic_analyser import (
+    OctaviusAnalyser,
+    _build_particle_stores,
+)
+from .density_cube import DensityCubeData
 
 INTERNALS_FILEPATH = Path(__file__).parent.parent / "internals.yaml"
 
@@ -62,16 +62,13 @@ class CubeAnalyser(OctaviusAnalyser):
                 assert isinstance(data_2, Dataset) # File
                 
                 print(f"Size of {key_1}/{key_2}: {data_2.shape}")
-            
-            
-            
+
     def get_manual_property_data(
         self,
         group_type: str,
         property_name: str,
     ) -> np.ndarray:
         assert self._reader.simulation_attributes is not None
-        
         
         if group_type not in self._collections:
             raise KeyError(f"'{group_type}' is not present in the catalogue.")

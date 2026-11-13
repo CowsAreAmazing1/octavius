@@ -6,6 +6,7 @@ Generic functions used throughout datacube generation and manipulation.
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
 def align_vectors_to_z(vectors: np.ndarray, alignment_vector: np.ndarray) -> np.ndarray:
     """
     Rotates a set of 3D vectors in a way which aligns the given `alignment_vector` with the z-axis.

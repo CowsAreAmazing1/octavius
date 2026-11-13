@@ -5,6 +5,8 @@ Functions for generic completed datacubes. Currently handles visualisation.
 # nothing specifically needed for type checking (yet)
 
 # default libraries
+from typing import Literal
+from collections.abc import Sequence
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -12,25 +14,28 @@ from dataclasses import dataclass
 import numpy as np
 
 # datacube packages (NOTE: does doing this here make them required by default?)
+from itertools import cycle
+
 from vispy import app, scene
 from vispy.color import Colormap
 from vispy.scene.visuals import Volume, XYZAxis
-from itertools import cycle
+from vispy.visuals.transforms import STTransform
 
-import matplotlib as mpl
+from matplotlib import colors, colormaps
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from ..log import get_logger, configure_logger
+from ..log import get_logger, configure_logger  
 
 INTERNALS_FILEPATH = Path(__file__).parent.parent / "internals.yaml"
 
-from matplotlib import colors
+import collections
+
 # from https://github.com/brkent/datacube-display
-CDICT_BKCMAP={
-    'red'  :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0), (1., 1., 1.)),
-    'green':  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0), (1., 1., 1.)),
-    'blue' :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0), (1., 1., 1.))
+CDICT_BKCMAP: dict[Literal["red", "green", "blue", "alpha"], collections.abc.Sequence[tuple[float, ...]]] = {
+    'red'   :  ((0., 0., 0.), (0.25,0.,0.), (0.5,1.,1.), (0.75,1.0,1.0), (1., 1., 1.)),
+    'green' :  ((0., 0., 0.), (0.25,0.,0.), (0.5,0.,0.), (0.75,1.0,1.0), (1., 1., 1.)),
+    'blue'  :  ((0., 0., 0.), (0.25,1.,1.), (0.5,0.,0.), (0.75,0.0,0.0), (1., 1., 1.))
 }
 BKCMAP = colors.LinearSegmentedColormap('bkcmap', CDICT_BKCMAP, 1024)
 
@@ -56,10 +61,10 @@ class DataCube:
     
     def __post_init__(self):
         if self.data.ndim != 3:
-            raise ValueError("Data must be a 3D array. Got shape: {}".format(self.data.shape))
+            raise ValueError(f"Data must be a 3D array. Got shape: {self.data.shape}")
         
         if len(self.axes) != 3:
-            raise ValueError("There must be exactly 3 axes. Got: {}".format(len(self.axes)))
+            raise ValueError(f"There must be exactly 3 axes. Got: {len(self.axes)}")
         
         for dimension, axis in enumerate(self.axes):
             if len(axis.coordinates) != self.data.shape[dimension]:
@@ -123,7 +128,7 @@ class DataCube:
         if colormap is None:
             cmap = BKCMAP
         else:
-            cmap = mpl.colormaps[colormap]
+            cmap = colormaps[colormap]
 
         data = np.asarray(self.data, dtype=np.float64)
 
@@ -155,10 +160,10 @@ class DataCube:
         vispy_cmap = Colormap(cmap(np.linspace(0.0, 1.0, 1024)))
 
         data_for_lin_norm = data
-        lin_normalization = mpl.colors.Normalize(vmin=data_min, vmax=data_max)
+        lin_normalization = colors.Normalize(vmin=data_min, vmax=data_max)
         
         data_for_log_norm = np.maximum(data, log_vmin)
-        log_normalization = mpl.colors.LogNorm(vmin=log_vmin, vmax=data_max)
+        log_normalization = colors.LogNorm(vmin=log_vmin, vmax=data_max)
         
         normalized_lin_data = lin_normalization(data_for_lin_norm.reshape(-1)).reshape(data.shape)
         normalized_log_data = log_normalization(data_for_log_norm.reshape(-1)).reshape(data.shape)
@@ -188,10 +193,11 @@ class DataCube:
         log_volume.visible = False
         normalization = 'linear'
         
-        volume_center = (np.array(vol_data.shape) / 2.0)[::-1]
-        lin_volume.transform = 
+        volume_center = (np.array(lin_vol.shape) / 2.0)[::-1]
+        lin_volume.transform = STTransform(translate=-volume_center)
+        log_volume.transform = STTransform(translate=-volume_center)
         
-        XYZAxis(pos=self., parent=view.scene, width=10)
+        XYZAxis(parent=view.scene, width=10)
 
         cam1 = scene.cameras.TurntableCamera(parent=view.scene, fov=60, name='Turntable')
         cam2 = scene.cameras.ArcballCamera(parent=view.scene, fov=60, name='Arcball')
@@ -205,15 +211,13 @@ class DataCube:
         grid.add_widget(cbar)
         cbar.visible = False        
 
-        canvas_events = getattr(canvas, 'events')
-
-        @canvas_events.key_press.connect
+        @canvas.events.key_press.connect
         def on_key_press(event):
             if event.text == '1':
                 method = next(methods)
                 lin_volume.method = method
                 log_volume.method = method
-                print("Render method: %s" % method)
+                print(f"Render method: {method}")
             elif event.text == '2':
                 view.camera = next(cameras)
                 print(view.camera.name + ' camera')
