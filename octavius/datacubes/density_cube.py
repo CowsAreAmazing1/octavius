@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 # other packages
 import numpy as np
 from numba import njit
-from scipy.spatial import KDTree
 
 # internal imports
 from .datacube import Axis, DataCube
@@ -21,7 +20,6 @@ from ..photometry.photometry_helpers import KERNEL_INT_MAP, _cubic_kernel, _quin
 @njit(cache=True)
 def _deposit_property_by_density(
     positions: np.ndarray,
-    masses: np.ndarray,
     property: np.ndarray,
     smoothing_lengths: np.ndarray,
     lower_bounds: np.ndarray,
@@ -56,7 +54,7 @@ def _deposit_property_by_density(
                     else:
                         weight = _quintic_kernel(q)
                     density_grid[ix, iy, iz] += (
-                        masses[particle_index] * weight / smoothing_length**3
+                        property[particle_index] * weight / smoothing_length**3
                     )
                     
     return density_grid
@@ -67,93 +65,12 @@ class DensityCubeData:
     """A simple data structure to hold and handle the data needed to make a spatial density cube."""
     
     pos: np.ndarray # positions of the particles
-    mass: np.ndarray # masses of the particles
     property: np.ndarray # desired property of the particles, 
     smoothing_length: np.ndarray | None
     com: np.ndarray # center of mass of the particles
     config: OctaviusConfig
     angular_momentum: np.ndarray | None = field(default=None) # angular momentum of the particles, optional
     boxsize: float | None = field(default=None) # box size of the simulation, optional
-
-    def make_binned_density_cube(
-        self,
-        side_length: float,
-        resolution: int,
-    ) -> DataCube:
-        
-        positions = np.asarray(self.pos, dtype=np.float64)
-        masses = np.asarray(self.mass, dtype=np.float64)
-        com = np.asarray(self.com, dtype=np.float64)
-        
-        edges = np.linspace(-side_length / 2, side_length / 2, resolution + 1)
-        
-        rel_positions = positions - com
-        
-        # Align the positions to the angular momentum
-        if self.angular_momentum is not None:
-            print("Aligning to angular momentum")
-            rel_positions = align_vectors_to_z(rel_positions, self.angular_momentum)
-        
-        mass_grid, _ = np.histogramdd(
-            rel_positions,
-            bins=(edges, edges, edges),
-            weights=masses,
-        )
-
-        voxel_width = side_length / resolution
-        voxel_volume = voxel_width ** 3
-        density_grid = mass_grid / voxel_volume
-        
-        axis_coord_centres = (edges[:-1] + edges[1:]) / 2
-        
-        return DataCube(
-            data=density_grid,
-            axes=(
-                Axis(name="x", unit="kpc", coordinates=axis_coord_centres),
-                Axis(name="y", unit="kpc", coordinates=axis_coord_centres),
-                Axis(name="z", unit="kpc", coordinates=axis_coord_centres),
-            ),
-            quantity="density",
-            unit="Msun/kpc^3",
-        )
-        
-    @staticmethod
-    def estimate_nearest_neighbour_smoothing_lengths(
-        positions: np.ndarray,
-        neighbours: int = 64,
-        minimum: float | None = None,
-        maximum: float | None = None,
-    ) -> np.ndarray:
-        """
-        Estimate a smoothing length from the distance to each particle's kth neighbour.
-        
-        Used to smooth particles that dont have a smoothing_length. Returns:
-        
-        - smoothing_lengths: the estimated smoothing lengths for each particle
-        """
-        positions = np.asarray(positions, dtype=np.float64)
-        if positions.ndim != 2 or positions.shape[1] != 3:
-            raise ValueError("positions must have shape (N, 3).")
-        if len(positions) < 2:
-            raise ValueError("At least two particles are required for neighbour smoothing.")
-        if neighbours < 1:
-            raise ValueError("neighbours must be at least 1.")
-
-        k = min(neighbours + 1, len(positions))
-        distances, _ = KDTree(positions).query(positions, k=k)
-        smoothing_lengths = np.asarray(distances[:, -1], dtype=np.float64)
-
-        if minimum is not None:
-            if minimum <= 0:
-                raise ValueError("minimum must be positive.")
-            smoothing_lengths = np.maximum(smoothing_lengths, minimum)
-        if maximum is not None:
-            if maximum <= 0:
-                raise ValueError("maximum must be positive.")
-            smoothing_lengths = np.minimum(smoothing_lengths, maximum)
-        if np.any(smoothing_lengths <= 0):
-            raise ValueError("Neighbour smoothing produced a non-positive length.")
-        return smoothing_lengths
 
     def make_smoothed_density_cube(
         self,
@@ -179,15 +96,15 @@ class DensityCubeData:
             raise ValueError("smoothing_length is required for smoothed density deposition.")
         
         positions = np.asarray(self.pos, dtype=np.float64)
-        masses = np.asarray(self.mass, dtype=np.float64)
         smoothing_lengths = np.asarray(self.smoothing_length, dtype=np.float64)
-        masses = np.asarray(self.mass, dtype=np.float64)
 
         positions = positions - np.asarray(self.com, dtype=np.float64)
         
-        if positions.shape != (len(masses), 3):
+        
+        
+        if positions.shape != (len(self.property), 3):
             raise ValueError("pos must have shape (N, 3) and match mass.")
-        if smoothing_lengths.shape != (len(masses),):
+        if smoothing_lengths.shape != (len(self.property),):
             raise ValueError("smoothing_length must have shape (N,) and match mass.")
         if np.any(~np.isfinite(smoothing_lengths)) or np.any(smoothing_lengths <= 0):
             raise ValueError("smoothing_length must contain finite, positive values.")
@@ -220,7 +137,6 @@ class DensityCubeData:
         
         density_grid = _deposit_property_by_density(
             positions=positions,
-            masses=masses,
             property=self.property,
             smoothing_lengths=smoothing_lengths,
             lower_bounds=lower_bounds,
