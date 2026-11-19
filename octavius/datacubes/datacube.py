@@ -63,9 +63,6 @@ class DataCube:
         if self.data.ndim != 3:
             raise ValueError(f"Data must be a 3D array. Got shape: {self.data.shape}")
         
-        if len(self.axes) != 3:
-            raise ValueError(f"There must be exactly 3 axes. Got: {len(self.axes)}")
-        
         for dimension, axis in enumerate(self.axes):
             if len(axis.coordinates) != self.data.shape[dimension]:
                 raise ValueError(
@@ -194,13 +191,11 @@ class DataCube:
         normalization = 'linear'
         
         volume_center = (np.array(lin_vol.shape) / 2.0)[::-1]
-        lin_volume.transform = STTransform(translate=-volume_center)
-        log_volume.transform = STTransform(translate=-volume_center)
         
-        XYZAxis(parent=view.scene, width=10)
-
-        cam1 = scene.cameras.TurntableCamera(parent=view.scene, fov=60, name='Turntable')
-        cam2 = scene.cameras.ArcballCamera(parent=view.scene, fov=60, name='Arcball')
+        add_axis(view.scene, volume_center, 10)
+        
+        cam1 = scene.cameras.TurntableCamera(parent=view.scene, center=volume_center, fov=60, name='Turntable')
+        cam2 = scene.cameras.ArcballCamera(parent=view.scene, center=volume_center, fov=60, name='Arcball')
         view.camera = cam1
 
         methods = cycle(['mip', 'attenuated_mip', 'translucent', 'additive', 'average', 'iso'])
@@ -231,3 +226,10 @@ class DataCube:
                 cbar.visible = not cbar.visible
 
         app.run()
+
+def add_axis(
+    parent, center: np.ndarray, length: float
+):
+    pos = center + np.array([[0, 0, 0], [length, 0, 0], [0, 0, 0], [0, length, 0], [0, 0, 0], [0, 0, length]])    
+    XYZAxis(parent=parent, pos=pos, width=10)
+

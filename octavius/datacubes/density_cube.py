@@ -100,8 +100,6 @@ class DensityCubeData:
 
         positions = positions - np.asarray(self.com, dtype=np.float64)
         
-        
-        
         if positions.shape != (len(self.property), 3):
             raise ValueError("pos must have shape (N, 3) and match mass.")
         if smoothing_lengths.shape != (len(self.property),):
