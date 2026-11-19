@@ -162,11 +162,19 @@ class DataCube:
         data_for_log_norm = np.maximum(data, log_vmin)
         log_normalization = colors.LogNorm(vmin=log_vmin, vmax=data_max)
         
+        _forward = lambda x : np.log(np.log(x))
+        _inverse = lambda x : np.exp(np.exp(x))
+        
+        data_for_loglog_norm = np.maximum(data, log_vmin)
+        loglog_normalization = colors.FuncNorm((_forward, _inverse), vmin=log_vmin, vmax=data_max)
+        
         normalized_lin_data = lin_normalization(data_for_lin_norm.reshape(-1)).reshape(data.shape)
         normalized_log_data = log_normalization(data_for_log_norm.reshape(-1)).reshape(data.shape)
+        normalized_loglog_data = loglog_normalization(data_for_loglog_norm.reshape(-1)).reshape(data.shape)
         
         lin_vol = np.asarray(normalized_lin_data, dtype=np.float32)
         log_vol = np.asarray(normalized_log_data, dtype=np.float32)
+        loglog_vol = np.asarray(normalized_loglog_data, dtype=np.float32)
     
         # Create a VisPy scene and add the volume visuals    
         canvas = scene.SceneCanvas(keys='interactive', size=(800, 600), show=True)
@@ -187,7 +195,15 @@ class DataCube:
             cmap=vispy_cmap,
             clim=(0.0, 1.0),
         )
+        loglog_volume = Volume(
+            loglog_vol,
+            parent=view.scene,
+            method="mip",
+            cmap=vispy_cmap,
+            clim=(0.0, 1.0),
+        )
         log_volume.visible = False
+        loglog_volume.visible = False
         normalization = 'linear'
         
         volume_center = (np.array(lin_vol.shape) / 2.0)[::-1]
@@ -218,9 +234,10 @@ class DataCube:
                 print(view.camera.name + ' camera')
             elif event.text == '3':
                 nonlocal normalization
-                normalization = {'linear': 'logarithmic', 'logarithmic': 'linear'}[normalization]
+                normalization = {'linear': 'logarithmic', 'logarithmic': 'loglog', 'loglog': 'linear'}[normalization]
                 lin_volume.visible = normalization == 'linear'
                 log_volume.visible = normalization == 'logarithmic'
+                loglog_volume.visible = normalization == 'loglog'
                 print(f"{normalization.capitalize()} normalization")
             elif event.text == '4':
                 cbar.visible = not cbar.visible
